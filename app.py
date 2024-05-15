@@ -18,12 +18,12 @@ import pandas as pd
 # Create an instance of the IMDb class
 ia = imdb.IMDb()
 
-#page layout
+# Page layout
 st.set_page_config(page_title="Letterboxd Stats", page_icon="🌎", layout="wide")
 
-# load CSS Style
-with open('style.css')as f:
-    st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html = True)
+# Load CSS Style
+with open('style.css') as f:
+    st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 # Connect to SQLite database
 conn = sqlite3.connect('movies.db')
@@ -31,7 +31,7 @@ c = conn.cursor()
 
 # Create table to store movie details
 c.execute('''CREATE TABLE IF NOT EXISTS movies
-             (username CHAR(50), year INTEGER, title TEXT, director TEXT, country TEXT, language TEXT, runtime INTEGER, genre TEXT, cast TEXT)''')
+             (username CHAR(50), year INTEGER, title TEXT, director TEXT, country TEXT, language TEXT, runtime INTEGER, genre TEXT, cast TEXT, rating FLOAT)''')
 
 # Commit changes and close connection
 conn.commit()
@@ -103,18 +103,8 @@ def scrape_profile(username):
     bio = soup.find('meta', property='og:description')['content']
     image_url = soup.find('meta', property='og:image')['content']
     
-    # Extracting favorite films and their links
-    #favorite_films = []
-    #films_container = soup.find('section', id='favourites')
-    #if films_container:
-        #film_posters = films_container.find_all('li', class_='poster-container')
-        #for poster in film_posters:
-            #film_name = poster.find('div', class_='film-poster')['data-film-slug']
-            #film_link = f"https://letterboxd.com/film/{film_name}/"
-            #favorite_films.append((film_name, film_link))
     return name, bio, image_url
 
-# Function to get movie details from JSON data
 def get_movie_details(movie_link):
     response = requests.get(movie_link)
     soup = BeautifulSoup(response.content, 'html.parser')
@@ -131,7 +121,6 @@ def extract_movies(url):
     response = requests.get(url)
     soup = BeautifulSoup(response.content, 'html.parser')
     movie_containers = soup.find_all('li', class_='poster-container')
-    #print(movie_containers)
     
     # Loop through each movie container
     for container in movie_containers:
@@ -142,7 +131,6 @@ def extract_movies(url):
             # Extract the value of the 'data-film-slug' attribute and append it to the list
             film_slugs.append(div_element['data-film-slug'])
 
-    # Print the list of film slugs
     return film_slugs
 
 def extract_all_movies(username):
@@ -151,7 +139,6 @@ def extract_all_movies(username):
     page_num = 1
     while True:
         url = f"{base_url}page/{page_num}/"
-        #print(url)
         movies = extract_movies(url)
         if not movies:
             break
@@ -183,8 +170,7 @@ def fetch_movie_details(username, movie_titles, stop_flag, data_collection_text)
     i = 0
 
     for title in movie_titles:
-        if stop_flag==1:
-            #st.write(f"{entry_count} movies imported till now")
+        if stop_flag:
             break
         else:
           try:
@@ -198,13 +184,14 @@ def fetch_movie_details(username, movie_titles, stop_flag, data_collection_text)
             runtime = movie.get('runtimes', [])[0] if movie.get('runtimes', []) else None
             genre = ', '.join(movie.get('genres', []))
             cast = ', '.join([person['name'] for person in movie.get('cast', [])])
+            rating = movie.get('rating', None)
 
             # Assuming you have defined progress_bar elsewhere
             progress_bar.progress((i + 1) / total_films)
             data_collection_text.text(f"Collecting your data {round(((i + 1) / total_films) * 100, 2)}%")
 
-            c.execute("INSERT INTO movies (username, year, title, director, country, language, runtime, genre, cast) VALUES (?,?,?,?,?,?,?,?,?)",
-                      (username, year, title, director, country, language, runtime, genre, cast))
+            c.execute("INSERT INTO movies (username, year, title, director, country, language, runtime, genre, cast, rating) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                      (username, year, title, director, country, language, runtime, genre, cast, rating))
 
             conn.commit()
 
@@ -238,325 +225,244 @@ def count_genre_entries(username):
 
 def get_top_countries(username):
     conn = sqlite3.connect('movies.db')
-    # Connect to SQLite database
     c = conn.cursor()
     # Fetch top 9 countries by count
     c.execute("SELECT country, COUNT(*) as count FROM movies WHERE username = ? GROUP BY country ORDER BY count DESC LIMIT 9", (username,))
     top_countries = c.fetchall()
 
-    # Close the connection
     conn.close()
 
-    # Convert the results to a dictionary
     top_countries_dict = {country: count for country, count in top_countries}
 
     return top_countries_dict
 
 def get_top_languages(username):
     conn = sqlite3.connect('movies.db')
-    # Connect to SQLite database
     c = conn.cursor()
     # Fetch top 9 languages by count
     c.execute("SELECT language, COUNT(*) as count FROM movies WHERE username = ? GROUP BY language ORDER BY count DESC LIMIT 9", (username,))
     top_languages = c.fetchall()
 
-    # Close the connection
     conn.close()
 
-    # Convert the results to a dictionary
     top_languages_dict = {language: count for language, count in top_languages}
 
     return top_languages_dict
 
-def get_movie_statistics(username):
-  
-    # Fetch total hours watched
-    c.execute("SELECT SUM(runtime) FROM movies WHERE username = ?", (username,))
-    total_minutes = c.fetchone()[0]
-    total_hours = total_minutes / 60
-    total_hours = round(total_hours, 2)
+def get_top_directors(username):
+    conn = sqlite3.connect('movies.db')
+    c = conn.cursor()
+    # Fetch top 5 directors by count
+    c.execute("SELECT director, COUNT(*) as count FROM movies WHERE username = ? GROUP BY director ORDER BY count DESC LIMIT 5", (username,))
+    top_directors = c.fetchall()
 
-    # Fetch number of distinct directors watched
-    c.execute("SELECT COUNT(DISTINCT director) FROM movies WHERE username = ?", (username,))
-    distinct_directors = c.fetchone()[0]
-
-    # Fetch number of distinct countries watched
-    c.execute("SELECT COUNT(DISTINCT country) FROM movies WHERE username = ?", (username,))
-    distinct_countries = c.fetchone()[0]
-
-    # Fetch number of distinct languages watched
-    c.execute("SELECT COUNT(DISTINCT language) FROM movies WHERE username = ?", (username,))
-    distinct_languages = c.fetchone()[0]
-
-    # Close the connection
     conn.close()
 
-    # Return the results
-    return total_hours, distinct_directors, distinct_countries, distinct_languages
+    top_directors_dict = {director: count for director, count in top_directors}
 
-def create_bar_chart(data, x_label, y_label):
+    return top_directors_dict
 
-    modified_data = {key if key != "" else "NaN": value for key, value in data.items()}
-    
-    sorted_data = sorted(modified_data.items(), key=lambda x: x[1], reverse=True)[:10]
-    
-    #sorted_data = sorted(data.items(), key=lambda x: x[1], reverse=True)[:10]
-    #sorted_data = sorted(data.items(), key=lambda x: x[1], reverse=True)
-    sorted_data_reverse = sorted_data[::-1]
-    
-    fig = px.bar(
-        sorted_data_reverse,
-        y=[item[0] for item in sorted_data_reverse],
-        x=[item[1] for item in sorted_data_reverse],
-        orientation="h",
-        labels={"x": x_label, "y": y_label},
-        color_discrete_sequence=["#0083B8"]*len(sorted_data_reverse),
-        template="plotly_white"
+def get_top_actors(username):
+    conn = sqlite3.connect('movies.db')
+    c = conn.cursor()
+    # Fetch top 5 actors by count
+    c.execute("SELECT cast, COUNT(*) as count FROM movies WHERE username = ? GROUP BY cast ORDER BY count DESC LIMIT 5", (username,))
+    top_actors = c.fetchall()
+
+    conn.close()
+
+    top_actors_dict = {actor: count for actor, count in top_actors}
+
+    return top_actors_dict
+
+def get_top_movies(username, limit=5):
+    conn = sqlite3.connect('movies.db')
+    c = conn.cursor()
+    # Fetch top movies by rating
+    c.execute("SELECT title, rating FROM movies WHERE username = ? ORDER BY rating DESC LIMIT ?", (username, limit))
+    top_movies = c.fetchall()
+
+    conn.close()
+
+    top_movies_dict = {title: rating for title, rating in top_movies}
+
+    return top_movies_dict
+
+def plot_year_movie_count(movie_count_by_year):
+    years = list(movie_count_by_year.keys())
+    counts = list(movie_count_by_year.values())
+    data = pd.DataFrame({
+        'Year': years,
+        'Count': counts
+    })
+    chart = alt.Chart(data).mark_bar().encode(
+        x='Year:O',
+        y='Count:Q'
+    ).properties(
+        title='Number of Movies Watched by Year'
     )
-    
-    fig.update_layout(
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="black"),
-        xaxis=dict(showgrid=True, gridcolor='#cecdcd'),
-        yaxis=dict(showgrid=True, gridcolor='#cecdcd'),
-        paper_bgcolor='rgba(0, 0, 0, 0)'
-    )
+    return chart
+
+def plot_genre_distribution(genre_counts):
+    labels = list(genre_counts.keys())
+    sizes = list(genre_counts.values())
+    colors = plt.cm.Paired(np.linspace(0, 1, len(labels)))
+
+    fig, ax = plt.subplots()
+    ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=140)
+    ax.axis('equal')
+    plt.title('Genre Distribution')
 
     return fig
 
-def get_director_photo_url(director_name):
-    # Search for the director
-    director_search = ia.search_person(director_name)
-    if director_search:
-        # Get the first director from the search results
-        director = director_search[0]
-        # Fetch the director's details
-        ia.update(director)
-        # Get the IMDb URL of the director
-        imdb_url = director['full-size headshot']
-        return imdb_url
-    else:
-        return None
-
-def get_top_directors(username):
-    conn = sqlite3.connect('movies.db')
-    # Connect to SQLite database
-    c = conn.cursor()
-    
-    # Query to get the top 10 directors based on their frequency for a given username
-    query = f'''
-        SELECT director, COUNT(*) as director_count
-        FROM movies
-        WHERE username = ? AND director IS NOT NULL AND director != ''
-        GROUP BY director
-        ORDER BY director_count DESC
-        LIMIT 20
-    '''
-    # Execute the query
-    c.execute(query, (username,))
-    top_directors = c.fetchall()
-    return top_directors
-
-def get_top_cast():
-
-    # Connect to SQLite database
-    conn = sqlite3.connect('movies.db')
-    c = conn.cursor()
-    
-    # Query to get the top 10 cast members based on their frequency in the entire table
-    query = '''
-        SELECT cast_member, COUNT(*) AS frequency
-        FROM (
-            SELECT TRIM(SUBSTR(cast, number, INSTR(cast || ',', ',', number) - number)) AS cast_member
-            FROM (
-                SELECT cast, 1 AS number
-                UNION ALL
-                SELECT cast, number + 1
-                FROM (
-                    SELECT cast, 1 AS number
-                    FROM movies
-                    UNION ALL
-                    SELECT cast, number + 1
-                    FROM movies, (SELECT 2 AS number UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10)
-                    WHERE LENGTH(cast) - LENGTH(REPLACE(cast, ',', '')) >= number - 1
-                )
-            )
-        )
-        WHERE cast_member <> ''
-        GROUP BY cast_member
-        ORDER BY frequency DESC
-        LIMIT 10;
-    '''
-    # Execute the query
-    c.execute(query)
-    top_cast = c.fetchall()
-    return top_cast
-
-# User input for username
-username = st.text_input("Enter your Letterboxd username:")
-
-if username:
-    # Scraping the profile
-    name, bio, image_url = scrape_profile(username)
-
-    # Extracting first sentence, number of films watched, and bio
-    st.write(bio)
-    first_sentence = bio.split('.')[0] + '.'
-    films_watched = re.search(r'\b(\d{1,3}(,\d{3})*)(\.\d+)?\b', bio).group()
-    total_films = int(films_watched.replace(',', ''))
-    try:
-        bio_text = bio.split('Bio: ')[1].strip()
-    except:
-        bio_text = ""
-
-    # Displaying the details using Streamlit
-    # st.title(name)
-    st.markdown("<h1 style='text-align: center;'>{}</h1>".format(name), unsafe_allow_html=True)
-
-    if image_url:
-        try:
-            response = requests.get(image_url)
-            img = Image.open(BytesIO(response.content))
-
-            # Resize the image to desired dimensions
-            new_width = 200  # Adjust the width as needed
-            new_height = 200  # Adjust the height as needed
-            img_resized = img.resize((new_width, new_height))
-
-            # Mask the resized image to a circle
-            img_circle = mask_to_circle(img_resized)
-
-            # Display the circular image in the first column
-            #with col1:
-            st.image(img_circle, width=150)
-
-            # Display the bio in the second column
-            #with col2:
-            st.markdown(f"**{first_sentence}**")
-            st.write(f"Films watched: **{films_watched}**")
-            #if bio_text !="":
-            #st.write(f"Bio: {bio_text}")
-            
-        except Exception as e:
-            st.error(str(e))
-    
-    #st.write(bio)
-
-    data_collection_text = st.text("Collecting your data...")
-
-    all_movies = extract_all_movies(username)
-
-    # List of movie titles
-    movie_titles = all_movies
-
-    progress_bar = st.progress(0)
-
-    stop_flag = st.button("Stop for now")
-
-    fetch_movie_details(username, movie_titles, stop_flag, data_collection_text)
-
-    progress_bar.progress(100)
-
-    c.execute("SELECT COUNT(*) FROM movies WHERE username = ?", (username,))
-    entry_count = c.fetchone()[0]
-    data_collection_text.text(f"{entry_count} movies imported till now")
-    #st.script("document.querySelector('#stop_button').disabled = true;")
-
-    data_collection_text.text(f"{entry_count} movies imported till now")
-
-    # Get top categories
-    total_hours, distinct_directors, distinct_countries, distinct_languages = get_movie_statistics(username)
-
-    #st.markdown(f"<span style='font-size: 36px;'>{total_hours}</span> **HOURS**   <span style='font-size: 36px;'>{distinct_directors}</span> **DIRECTORS**   <span style='font-size: 36px;'>{distinct_countries}</span> **COUNTRIES**   <span style='font-size: 36px;'>{distinct_languages}</span> **LANGUAGES**", unsafe_allow_html=True)
-
-    #st.markdown(f"<div style='text-align: center;'><span style='font-size: 36px;'>{total_hours}</span><br><b>HOURS</b></div>   <div style='text-align: center;'><span style='font-size: 36px;'>{distinct_directors}</span><br><b>DIRECTORS</b></div>   <div style='text-align: center;'><span style='font-size: 36px;'>{distinct_countries}</span><br><b>COUNTRIES</b></div>   <div style='text-align: center;'><span style='font-size: 36px;'>{distinct_languages}</span><br><b>LANGUAGES</b></div>", unsafe_allow_html=True)
-
-    st.markdown(
-        f"<div style='text-align: center;'><div style='display: inline-block; margin-right: 50px;'><span style='font-size: 36px;'>{total_hours}</span><br><b>HOURS</b></div><div style='display: inline-block; margin-right: 50px;'><span style='font-size: 36px;'>{distinct_directors}</span><br><b>DIRECTORS</b></div><div style='display: inline-block; margin-right: 50px;'><span style='font-size: 36px;'>{distinct_countries}</span><br><b>COUNTRIES</b></div><div style='display: inline-block;'><span style='font-size: 36px;'>{distinct_languages}</span><br><b>LANGUAGES</b></div></div>",
-        unsafe_allow_html=True
+def plot_top_countries(top_countries):
+    countries = list(top_countries.keys())
+    counts = list(top_countries.values())
+    data = pd.DataFrame({
+        'Country': countries,
+        'Count': counts
+    })
+    chart = alt.Chart(data).mark_bar().encode(
+        x='Country:O',
+        y='Count:Q'
+    ).properties(
+        title='Top 9 Countries'
     )
+    return chart
 
-    year_movie_count = get_year_movie_count(username)
-
-    years = list(year_movie_count.keys())
-    movie_counts = list(year_movie_count.values())
-    
-    # Create a line graph for movie counts by year
-    fig_line = px.line(
-        x=years,
-        y=movie_counts,
-        labels={"x": "YEARS", "y": "Movie Count"},
-        color_discrete_sequence=["#0083b8"],
-        template="plotly_white"
+def plot_top_languages(top_languages):
+    languages = list(top_languages.keys())
+    counts = list(top_languages.values())
+    data = pd.DataFrame({
+        'Language': languages,
+        'Count': counts
+    })
+    chart = alt.Chart(data).mark_bar().encode(
+        x='Language:O',
+        y='Count:Q'
+    ).properties(
+        title='Top 9 Languages'
     )
-    fig_line.update_layout(
-        plot_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(
-            tickmode="array",
-            tickvals=[years[0], years[-1]],
-            ticktext=[years[0], years[-1]],
-            showgrid=False
-        ),
-        yaxis=dict(showgrid=False)
+    return chart
+
+def plot_top_directors(top_directors):
+    directors = list(top_directors.keys())
+    counts = list(top_directors.values())
+    data = pd.DataFrame({
+        'Director': directors,
+        'Count': counts
+    })
+    chart = alt.Chart(data).mark_bar().encode(
+        x='Director:O',
+        y='Count:Q'
+    ).properties(
+        title='Top 5 Directors'
     )
-    
-    # Display the line graph
-    st.plotly_chart(fig_line, use_container_width=True)
+    return chart
 
-    language_counts = get_top_languages(username)
-    fig_language = create_bar_chart(
-        language_counts, 
-        x_label="LANGUAGES", 
-        y_label=""
+def plot_top_actors(top_actors):
+    actors = list(top_actors.keys())
+    counts = list(top_actors.values())
+    data = pd.DataFrame({
+        'Actor': actors,
+        'Count': counts
+    })
+    chart = alt.Chart(data).mark_bar().encode(
+        x='Actor:O',
+        y='Count:Q'
+    ).properties(
+        title='Top 5 Actors'
     )
-    
-    country_counts = get_top_countries(username)
-    fig_country = create_bar_chart(
-        country_counts, 
-        x_label="COUNTRIES", 
-        y_label=""
+    return chart
+
+def plot_top_movies(top_movies):
+    movies = list(top_movies.keys())
+    ratings = list(top_movies.values())
+    data = pd.DataFrame({
+        'Movie': movies,
+        'Rating': ratings
+    })
+    chart = alt.Chart(data).mark_bar().encode(
+        x='Movie:O',
+        y='Rating:Q'
+    ).properties(
+        title='Top Movies by Rating'
     )
+    return chart
 
-    genre_counts = count_genre_entries(username)
-    fig_genre = create_bar_chart(
-        genre_counts, 
-        x_label="GENRES", 
-        y_label=""
-    )
+def main():
+    st.title("Letterboxd Stats")
 
+    # Prompt user for Letterboxd username
+    username = st.text_input("Enter your Letterboxd username", "")
 
-    left,right,center=st.columns(3)
-    left.plotly_chart(fig_country, use_container_width=True)
-    right.plotly_chart(fig_language, use_container_width=True)
-    center.plotly_chart(fig_genre, use_container_width=True)
-
-
-    # Get top 10 directors based on their frequency
-    top_directors = get_top_directors(username)
-
-    # Display the results
-    if top_directors:
-        st.markdown(f"<h3 style='text-align: center;'>DIRECTORS</h3>", unsafe_allow_html=True)
-        cols = st.columns(5)
-        for i, (director, count) in enumerate(top_directors):
-            # Display director's name and number of movies
-            if director != "":
-                cols[i % 5].write(f"{director} - {count} movies")
-    else:
-        st.write("No data found for the given username.")
-
-    # Get top 10 cast members based on their frequency
-    #top_cast = get_top_cast()
-
-    # Display the results
-    #if top_cast:
-        #st.markdown(f"<h3 style='text-align: center;'>ACTORS</h3>", unsafe_allow_html=True)
-        #cols = st.columns(5)
-        #for i, (cast_member, count) in enumerate(top_cast, start=1):
-            #cols[i % 5].write(f"{i}. {cast_member} - {count} movies")
-    #else:
-        #print("No data found.")
+    if username:
+        # Scrape user profile
+        name, bio, image_url = scrape_profile(username)
         
-    
+        # Display profile information
+        st.header(name)
+        st.write(bio)
+        st.image(image_url)
 
-    
+        # Extract all movies watched by the user
+        all_movies = extract_all_movies(username)
+
+        # Set up data collection flag and text
+        stop_flag = False
+        data_collection_text = st.empty()
+        progress_bar = st.progress(0)
+        fetch_movie_details(username, all_movies, stop_flag, data_collection_text)
+
+        # Get user statistics
+        tot_hours, tot_dirs, tot_countries = get_user_stats(username)
+
+        # Display user statistics
+        st.write(f"Total hours of movies watched: {tot_hours}")
+        st.write(f"Total number of directors: {tot_dirs}")
+        st.write(f"Total number of countries: {tot_countries}")
+
+        # Get movie count by year
+        movie_count_by_year = get_year_movie_count(username)
+
+        # Plot and display number of movies watched by year
+        st.altair_chart(plot_year_movie_count(movie_count_by_year), use_container_width=True)
+
+        # Get genre distribution
+        genre_counts = count_genre_entries(username)
+
+        # Plot and display genre distribution
+        st.pyplot(plot_genre_distribution(genre_counts))
+
+        # Get top countries
+        top_countries = get_top_countries(username)
+
+        # Plot and display top countries
+        st.altair_chart(plot_top_countries(top_countries), use_container_width=True)
+
+        # Get top languages
+        top_languages = get_top_languages(username)
+
+        # Plot and display top languages
+        st.altair_chart(plot_top_languages(top_languages), use_container_width=True)
+
+        # Get top directors
+        top_directors = get_top_directors(username)
+
+        # Plot and display top directors
+        st.altair_chart(plot_top_directors(top_directors), use_container_width=True)
+
+        # Get top actors
+        top_actors = get_top_actors(username)
+
+        # Plot and display top actors
+        st.altair_chart(plot_top_actors(top_actors), use_container_width=True)
+
+        # Get top movies
+        top_movies = get_top_movies(username)
+
+        # Plot and display top movies
+        st.altair_chart(plot_top_movies(top_movies), use_container_width=True)
+
+if __name__ == "__main__":
+    main()
